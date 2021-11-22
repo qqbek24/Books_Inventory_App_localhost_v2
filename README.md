@@ -7,7 +7,8 @@
 4. Open the Books_Inventory_App_localhost_MySql Project in Pycharm then run pyhton file app.py 
 5. Visit the website on python localhost http://127.0.0.1:5000/
 6. (To log into inventory page, use the username ‘admin’ and password ‘admin’.)
-7. Add ".env" file containing your GOOGLE API KEY like 
+7. Add ".env" file containing your GOOGLE API KEY like
+ 
     GOOGLE_BOOKS_API_KEY = "put here your google api key string", 
 
     and other DB credentials for example:
