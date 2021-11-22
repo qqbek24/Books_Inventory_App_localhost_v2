@@ -92,6 +92,8 @@ class inventory(db.Model):
 #         pass
 #
 #     def query_execute(self, user_arg):
+#         my_db = my_db_connection()
+#         my_cursor = my_db.cursor()
 #         my_cursor.execute(self, user_arg)
 #         my_db.commit()
 #
