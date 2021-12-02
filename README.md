@@ -1,6 +1,6 @@
 #   Project - Flask, PyMySQL, Google Books API
 ##  Books Inventory App (localhost MySql)
-### Installation Instructions (App and instruction is in production):
+### Installation Instructions (App and instruction is under construction):
 1. Download the Books_Inventory_App_localhost_v2
 2. Place the cloned folder under your Users directory “PycharmProjects”.
 3. Install all the dependencies included in the requirements.txt file
