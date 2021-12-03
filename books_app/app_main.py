@@ -1,22 +1,17 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, escape
+from flask import render_template, request, redirect, url_for, flash, session, escape
 # from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user, current_user
 
 from config import Config
-from books_app import myconnutils
-from books_app import models
-from books_app import app
+from books_app.models import Users, Inventory, app_user
+from books_app import app, db
 import json
 from urllib.request import urlopen
 import string
 
-# TODO: HTML Error handling
+# TODO: HTML Error handling improve
 #       unit tests with pytest
-#       heroku connection limit problem
 #       switch to SQLAlchemy
 
-# app = Flask(__name__)
-# app.config.from_object(Config)
-# app.secret_key = Config.SECRET_KEY
 # app.permanent_session_lifetime = True
 
 
@@ -46,7 +41,7 @@ def register():
                 flash('Please fill out the fields')
             else:
                 if request.method == 'POST':
-                    db_res_information = models.app_user.user_add(username_form, password_form1)
+                    db_res_information = app_user.user_add(username_form, password_form1)
                     if db_res_information != 'Successfully Added!':
                         flash(db_res_information)
                         return redirect(url_for('registered'))
@@ -54,8 +49,8 @@ def register():
                         flash(db_res_information)
                         return redirect(url_for('logout'))
 
-    except Exception as e:
-        print(e)
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('register.html')
 
 
@@ -75,19 +70,14 @@ def log():
             flash('Please fill out the fields')
         else:
             if request.method == 'POST':
-                my_db = myconnutils.my_db_connection()
-                my_cursor = my_db.cursor()
-
                 if 'username' in session:
                     return redirect(url_for('index'))
                 if request.method == 'POST':
-                    my_cursor.execute("SELECT COUNT(1) FROM invent_system_users WHERE User_Name = %s;", [username_form])
-                    if my_cursor.fetchone()[0]:
-                        password_form_hash_checked = models.app_user.user_pass_check(username_form, password_form)
+                    user = db.session.query(Users).filter_by(User_Name=username_form).first()
+                    if user:
+                        password_form_hash_checked = app_user.user_pass_check(username_form, password_form)
                         if password_form_hash_checked is True:
                             session['username'] = request.form['username']
-                            my_db.commit()
-                            my_cursor.close()
                             flash('Login Successfully')
                             return render_template('index.html')
                         else:
@@ -96,8 +86,10 @@ def log():
                     else:
                         flash('Either Username or Password_1 is Incorrect')
                         return redirect(url_for('login'))
-    except Exception as e:
-        print(e)
+
+    except Exception as exc:
+        # flash('Unexpected error: {}'.format(400))
+        flash('Unexpected error: {}'.format(exc))
         return render_template('login.html')
 
 
@@ -135,26 +127,25 @@ def insert():
             return render_template('index.html')
         else:
             if request.method == 'POST':
-                my_db = myconnutils.my_db_connection()
-                my_cursor = my_db.cursor()
-                if request.method == 'POST':
-                    my_cursor.execute("SELECT COUNT(1) FROM invent_table_view WHERE title = %s;", [p_title])
-                    if my_cursor.fetchone()[0]:
-                        flash(p_title + ' is already on the list')
-                        return render_template('index.html')
-                    else:
-                        my_cursor.execute("INSERT INTO invent_table_view(title, author , date_of_publication , isbn" 
-                                          ", pages , cover , language) Values(%s,%s,%s,%s,%s,%s,%s)",
-                                          (p_title, p_author, p_date_pub, p_isbn, p_pages, p_cover, p_lang))
-                        my_db.commit()
-                        my_cursor.close()
-                        my_db.close()
-                        flash(p_title + ', ' + p_author + ', ' + p_date_pub + ', Successfully saved!')
-                        return render_template('index.html')
-                else:
+                item = db.session.query(Inventory).filter_by(title=p_title).first()
+                if item:
+                    flash(p_title + ' is already on the list')
                     return render_template('index.html')
-    except Exception as e:
-        flash(str(e))
+                else:
+                    new_title = Inventory(
+                        title=p_title, author=p_author,
+                        date_of_publication=p_date_pub, isbn=p_isbn,
+                        pages=p_pages, cover=p_cover, language=p_lang
+                    )
+                    db.session.add(new_title)
+                    db.session.commit()
+                    flash(p_title + ', ' + p_author + ', ' + p_date_pub + ', Successfully saved!')
+                    return render_template('index.html')
+            else:
+                return render_template('index.html')
+
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
@@ -162,13 +153,14 @@ def insert():
 def searchall():
     try:
         if request.method == 'POST':
-            my_db = myconnutils.my_db_connection()
-            my_cursor = my_db.cursor()
-            my_cursor.execute("SELECT * FROM invent_table_view")
-            data = my_cursor.fetchall()
+            data = db.session.query(Inventory.title, Inventory.author,
+                                    Inventory.date_of_publication, Inventory.isbn,
+                                    Inventory.pages, Inventory.cover,
+                                    Inventory.language, Inventory.product_id).all()
             return render_template('index.html', products=data)
-    except Exception as e:
-        flash(str(e))
+
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
@@ -176,24 +168,27 @@ def searchall():
 def search_title():
     try:
         prod_search = request.form['searchprod']
-        sql_stm_cnt = "SELECT COUNT(1) FROM invent_table_view WHERE title LIKE %s;"
-        sql_stm = "SELECT * FROM invent_table_view WHERE title LIKE %s;"
         if prod_search == "":
             flash('Please fill out the search field ')
             return render_template('index.html')
         else:
-            db_res = search_col(prod_search, sql_stm_cnt, sql_stm)
-            if db_res != 'There no such product as ':
-                flash(prod_search + ' Found!')
-                return render_template('index.html', prodnames=db_res)
-            elif db_res == "index.html":
-                return render_template('index.html')
-            else:
-                flash('There no such product as ' + prod_search)
-                return render_template('index.html')
+            if request.method == 'POST':
+                items = db.session.query(Inventory).filter(Inventory.title.contains(prod_search))
+                if items:
+                    flash(prod_search + ' Found!')
+                    items = db.session.query(
+                        Inventory.title, Inventory.author,
+                        Inventory.date_of_publication, Inventory.isbn,
+                        Inventory.pages, Inventory.cover,
+                        Inventory.language, Inventory.product_id
+                    ).filter(Inventory.title.contains(prod_search))
+                    return render_template('index.html', prodnames=items)
+                else:
+                    flash('There no such product as ' + prod_search)
+                    return render_template('index.html')
 
-    except Exception as e:
-        flash(str(e))
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
@@ -201,24 +196,27 @@ def search_title():
 def search_author():
     try:
         prod_search = request.form['searchprod']
-        sql_stm_cnt = "SELECT COUNT(1) FROM invent_table_view WHERE author LIKE %s;"
-        sql_stm = "SELECT * FROM invent_table_view WHERE author LIKE %s;"
         if prod_search == "":
             flash('Please fill out the search field ')
             return render_template('index.html')
         else:
-            db_res = search_col(prod_search, sql_stm_cnt, sql_stm)
-            if db_res != 'There no such product as ':
-                flash(prod_search + ' Found!')
-                return render_template('index.html', prodnames=db_res)
-            elif db_res == "index.html":
-                return render_template('index.html')
-            else:
-                flash('There no such product as ' + prod_search)
-                return render_template('index.html')
+            if request.method == 'POST':
+                items = db.session.query(Inventory).filter(Inventory.author.contains(prod_search))
+                if items:
+                    flash(prod_search + ' Found!')
+                    items = db.session.query(
+                        Inventory.title, Inventory.author,
+                        Inventory.date_of_publication, Inventory.isbn,
+                        Inventory.pages, Inventory.cover,
+                        Inventory.language, Inventory.product_id
+                    ).filter(Inventory.author.contains(prod_search))
+                    return render_template('index.html', prodnames=items)
+                else:
+                    flash('There no such product as ' + prod_search)
+                    return render_template('index.html')
 
-    except Exception as e:
-        flash(str(e))
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
@@ -226,44 +224,28 @@ def search_author():
 def search_language():
     try:
         prod_search = request.form['searchprod']
-        sql_stm_cnt = "SELECT COUNT(1) FROM invent_table_view WHERE language LIKE %s;"
-        sql_stm = "SELECT * FROM invent_table_view WHERE language LIKE %s;"
         if prod_search == "":
             flash('Please fill out the search field ')
             return render_template('index.html')
         else:
-            db_res = search_col(prod_search, sql_stm_cnt, sql_stm)
-            if db_res != 'There no such product as ':
-                flash(prod_search + ' Found!')
-                return render_template('index.html', prodnames=db_res)
-            elif db_res == "index.html":
-                return render_template('index.html')
-            else:
-                flash('There no such product as ' + prod_search)
-                return render_template('index.html')
+            if request.method == 'POST':
+                items = db.session.query(Inventory).filter(Inventory.language.contains(prod_search))
+                if items:
+                    flash(prod_search + ' Found!')
+                    items = db.session.query(
+                        Inventory.title, Inventory.author,
+                        Inventory.date_of_publication, Inventory.isbn,
+                        Inventory.pages, Inventory.cover,
+                        Inventory.language, Inventory.product_id
+                    ).filter(Inventory.language.contains(prod_search))
+                    return render_template('index.html', prodnames=items)
+                else:
+                    flash('There no such product as ' + prod_search)
+                    return render_template('index.html')
 
-    except Exception as e:
-        flash(str(e))
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
-
-
-def search_col(prod_search, sql_stm_cnt_ex, sql_stm_ex):
-    prod_search_str = prod_search
-    if request.method == 'POST':
-        my_db = myconnutils.my_db_connection()
-        my_cursor = my_db.cursor()
-        if request.method == 'POST':
-            my_cursor.execute(sql_stm_cnt_ex, ["%" + prod_search_str + "%"])
-            if my_cursor.fetchone()[0]:
-                my_cursor.execute(sql_stm_ex, ["%" + prod_search_str + "%"])
-                prod = my_cursor.fetchall()
-                return prod
-            else:
-                return 'There no such product as '
-        else:
-            return 'There no such product as '
-    else:
-        return 'index.html'
 
 
 @app.route('/delete', methods=['POST'])
@@ -274,22 +256,18 @@ def delete():
             return render_template('index.html')
         else:
             if request.method == 'POST':
-                my_db = myconnutils.my_db_connection()
-                my_cursor = my_db.cursor()
-                if request.method == 'POST':
-                    my_cursor.execute("SELECT COUNT(1) FROM invent_table_view WHERE title = %s;", [del_title])
-                    if my_cursor.fetchone()[0]:
-                        my_cursor.execute("DELETE FROM invent_table_view WHERE title = %s;", [del_title])
-                        my_db.commit()
-                        my_cursor.close()
-                        my_db.close()
-                        flash('Successfully Deleted!')
-                        return render_template('index.html')
-                    else:
-                        flash('Record ' + request.form['titlename'] + ' is not on the List')
+                item = db.session.query(Inventory).filter_by(title=del_title).first()
+                if item:
+                    db.session.delete(item)
+                    db.session.commit()
+                    flash('Successfully Deleted!')
+                    return render_template('index.html')
+                else:
+                    flash('Record ' + request.form['titlename'] + ' is not on the List')
         return render_template('index.html')
-    except Exception as e:
-        flash(str(e))
+
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
@@ -319,30 +297,25 @@ def update():
             return render_template('index.html')
         else:
             if request.method == 'POST':
-                my_db = myconnutils.my_db_connection()
-                my_cursor = my_db.cursor()
-                if request.method == 'POST':
-                    my_cursor.execute("SELECT COUNT(1) FROM invent_table_view WHERE title = %s;", [title_p])
-                    if my_cursor.fetchone()[0]:
-                        my_cursor.execute("SELECT * FROM invent_table_view WHERE title = %s;", [title_p])
-                        flash(title_p + ' Found!')
-                        my_cursor.execute("UPDATE invent_table_view SET author='" + author_p +
-                                          "' , date_of_publication='" + date_pub_p +
-                                          "' , isbn='" + isbn_p +
-                                          "' , pages='" + pages_p +
-                                          "' , cover='" + cover_p +
-                                          "' , language='" + lang_p +
-                                          "' WHERE title='" + title_p + "'")
-                        my_db.commit()
-                        my_cursor.close()
-                        my_db.close()
-                        flash('Successfully Updated')
-                        return render_template('index.html')
-                    else:
-                        flash('There no such product as ' + title_p)
+                item = db.session.query(Inventory).filter(Inventory.title == title_p).first()
+                if item:
+                    flash(title_p + ' Found!')
+                    item.title = title_p
+                    item.author = author_p
+                    item.date_of_publication = date_pub_p
+                    item.isbn = isbn_p
+                    item.pages = pages_p
+                    item.cover = cover_p
+                    item.language = lang_p
+                    db.session.commit()
+                    flash('Successfully Updated')
                     return render_template('index.html')
-    except Exception as e:
-        flash(str(e))
+                else:
+                    flash('There no such product as ' + title_p)
+                return render_template('index.html')
+
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
@@ -353,21 +326,24 @@ def searchapi():
         req_api = request_ggl_bks_api(q_value)
         req_jsn = json.load(req_api)
         data = ret_from_ggl_bks_jsn(req_jsn)
-
         return render_template('index.html', apiproducts=data)
 
-    except Exception as e:
-        flash(str(e))
+    except Exception as exc:
+        flash('Unexpected error: {}'.format(exc))
         return render_template('index.html')
 
 
 def request_ggl_bks_api(form_value):
-    s = form_value
-    q_value = s.translate({ord(c): None for c in string.whitespace})
+    # try:
+    q_value = form_value.translate({ord(c): None for c in string.whitespace})
     google_api_key = Config.GOOGLE_BOOKS_API_KEY
     req_params = ('?q=' + q_value + '&maxResults=40' + '&key=' + google_api_key)
     req_api = urlopen("https://www.googleapis.com/books/v1/volumes" + req_params)
     return req_api
+
+    # except Exception as exc:
+    #     flash('Unexpected error: {}'.format(exc))
+    #     return req_api
 
 
 def ret_from_ggl_bks_jsn(req_jsn):
@@ -422,7 +398,3 @@ def ret_from_ggl_bks_jsn(req_jsn):
             data += [t1]
     data_bks = data
     return data_bks
-
-
-# if __name__ == "__main__":
-#     app.run(debug=Config.DEBUG_MODE)
