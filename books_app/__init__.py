@@ -11,4 +11,3 @@ db = SQLAlchemy(app)
 
 from books_app import models
 from books_app import app_main
-# from books_app import myconnutils
