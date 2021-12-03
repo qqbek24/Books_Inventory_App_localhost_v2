@@ -13,7 +13,3 @@ class Config:
     DEBUG_MODE = True
     SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    # DB_USER_LOGIN = os.environ.get('DB_USER_LOGIN')
-    # DB_USER_PASS = os.environ.get('DB_USER_PASS')
-    # S_HOST = os.environ.get('S_HOST')
-    # S_DB = os.environ.get('S_DB')
