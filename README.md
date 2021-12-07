@@ -1,4 +1,4 @@
-#   Project - Flask, PyMySQL, Google Books API
+#   Project - Flask, Flask-SQLAlchemy, Google Books API
 ##  Books Inventory App (localhost MySql)
 ### Installation Instructions (App and instruction is under construction):
 1. Download the Books_Inventory_App_localhost_v2
